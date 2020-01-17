@@ -55,37 +55,6 @@ words_30 = ["argument", "arm", "atmosphere", "bank", "bar", "chair", "channel", 
 #     return parsed_list
 
 
-# def get_words_alias(redirect_file_PATH, target_words):
-#     """ 
-#     Read "en.link.redirect" file; get alias data of target_words.
-#     Input:
-#         redirect_file_PATH: "en.link.redirect" file. 
-#             - File format: 
-#             - Example: zygotic    Zygote  16  Counter({'[[zygotic]]': 6, '[[zygote|zygotic]]': 6, '[[Zygote|zygotic]]': 4})
-#     Return:
-#         rev_words_alias(dict): {alias: (word, sense)}
-#     """
-#     words_alias = {}
-#     rev_words_alias = {}
-#     with open(redirect_file_PATH) as redirect_file:
-#         redirect_data = redirect_file.readlines()
-#         for word in target_words:
-#             words_alias[word] = {}
-#             for line in redirect_data:
-#                 if line[:len(word)+1] == word+'\t':
-#                     _, sense, sense_count, sense_info = line.split('\t')
-#                     words_alias[word][sense] = set()
-#                     for s in re.finditer(r'\[\[[^\[\]]+|[^\[\]]+\]\]', line):
-#                         words_alias[word][sense].add(s.group().split('|')[0][2:])
-    
-#     for word in words_alias:
-#         for sense in words_alias[word]:
-#             for page in words_alias[word][sense]:
-#                 rev_words_alias[page] = (word, sense)
-                    
-#     return rev_words_alias
-
-
 def get_lemmas(redirect_file_PATH):
     lemmas = set()
     with open(redirect_file_PATH) as file:
@@ -98,13 +67,14 @@ def get_lemmas(redirect_file_PATH):
 
 def get_words_alias(redirect_file_PATH):
     """ 
-    Read "en.link.redirect" file; get alias data of target_words.
+    Read "en.link.redirect" file; get alias data of target_words. "en.link.redirect" should be renamed as en.anchorlink.txt
     Input:
         redirect_file_PATH: "en.link.redirect" file. 
             - File format: 
             - Example: zygotic    Zygote  16  Counter({'[[zygotic]]': 6, '[[zygote|zygotic]]': 6, '[[Zygote|zygotic]]': 4})
     Return:
         rev_words_alias(dict): {alias: (word, sense)}
+        - Example: rev_words_alias['party'] = ('social', 'Party')
     """
     rev_words_alias = {}
 
@@ -134,8 +104,8 @@ def extract_sent(words_alias, jsonlines):
     If it's redirected to any page listed in words_alias, extract the sentence the redirect link located in.
 
     Return:
-        ex_sent(dict): {word0: {sense0: [(sent0, wiki_id), (sent1, wiki_id), ...], 
-                                sense1: [(sent0, wiki_id), (sent1, wiki_id), ...], ... },
+        ex_sent(dict): {word0: {sense0: [(sent0, wiki_id, start_idx, end_idx), (sent1, wiki_id, start_idx, end_idx), ...], 
+                                sense1: [(sent0, wiki_id, start_idx, end_idx), (sent1, wiki_id, start_idx, end_idx), ...], ... },
                         word1: ...
                         }
     """
@@ -160,7 +130,7 @@ def extract_sent(words_alias, jsonlines):
                             ex_sent[word] = {}
                         if (wiki_sense not in ex_sent[words_alias[page][0]]):
                             ex_sent[word][wiki_sense] = []
-                        ex_sent[word][wiki_sense].append((line, wiki_id))
+                        ex_sent[word][wiki_sense].append((line, wiki_id, start_idx, end_idx))
 
     numOfSent = 0
     for word in ex_sent:
@@ -203,16 +173,16 @@ def main():
     #     json.dump(result, fp, indent=4)
     # print("Finisjed writing 30_words_set.json")
 
-    print("Writing full_set.json...")
+    print("Writing full_set_idx.json...")
     result = {}
-    with open('full_set.json', 'wb') as fp:
+    with open('full_set_idx.json', 'wb') as fp:
         for word in tqdm.tqdm(lemmas):
             if(word in ex_sents.keys()):
                 # fp.write(word.encode('utf8')+b'\t')
                 # fp.write(json_util.dumps(ex_sents[word], ensure_ascii=False).encode('utf8')+b'\n')
                 result[word] = ex_sents[word]
         fp.write(json.dumps(result, ensure_ascii=False, indent=4).encode('utf8'))
-    print("Finished writing full_set.json")
+    print("Finished writing full_set_idx.json")
     
 
 if __name__ == "__main__":
