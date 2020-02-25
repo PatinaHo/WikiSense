@@ -93,17 +93,24 @@ def get_keywords_score(definitions, keywords):
     print("Computing keyword scores...")
     keywords_score = {}
     USELESS_GT = {"group"}
+    ILLUSTRATE_WORD = [" is a ", " is an ", " is the ", " refer to ", " refers to "]
 
-    for title in keywords:
+    for i, title in enumerate(keywords):
         tmp = {}
         for wn_sense in keywords[title]:
             matched_keywords = {}
             for keyword in keywords[title][wn_sense]:
-                tokenized_definition = nltk.word_tokenize(definitions[title])
-                if keyword.replace('_', ' ') in tokenized_definition and keyword not in USELESS_GT:
-                    keyword_idx = tokenized_definition.index(keyword.replace('_', ' '))
-                    score = len(tokenized_definition) - keyword_idx
-                    matched_keywords[score] = keyword
+                # WikiDef 的括弧去掉，從 is a / is an / is the / refer to / refers to 切開，只用之後的字
+                # 如果 definition 沒有這些字，就丟掉這筆資料
+                valid_def = re.sub(r'\(.+\)', '', definitions[title])
+                if(any(word in valid_def for word in ILLUSTRATE_WORD)):
+                    illustrate_word = [word for word in ILLUSTRATE_WORD if word in valid_def][0]
+                    valid_def = ' '.join(valid_def.split(illustrate_word)[1:])
+                    tokenized_definition = nltk.word_tokenize(valid_def)
+                    if keyword.replace('_', ' ') in tokenized_definition and keyword not in USELESS_GT:
+                        keyword_idx = tokenized_definition.index(keyword.replace('_', ' '))
+                        score = len(tokenized_definition) - keyword_idx
+                        matched_keywords[score] = keyword
             if matched_keywords:
                 tmp[wn_sense] = matched_keywords
         if tmp:
