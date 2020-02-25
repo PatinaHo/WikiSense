@@ -86,7 +86,7 @@ def get_keywords_score(definitions, keywords):
     Count the score of keywords based on its location in definition, keywords which appear in the front of definition gets higher score.
     - Return:
         - keywords_score(length: 100893)
-        ex: keywords_score['Party]
+        ex: keywords_score['Party']
         {'definition': 'A party is a gathering of people who have been invited by a host for the purposes of socializing, conversation, recreation, or as part of a festival or other commemoration of a special occasion.',
         'keywords': {'party.n.02': {34: 'gathering'}, 'party.n.04': {2: 'occasion'}}}
     """
@@ -119,7 +119,7 @@ def align_synset(keywords_score, keyword2sense, definitions):
     Synset with highest sum of scores is the aligned sense of the page;
     if multiple synsets have same highest score, choose the synset with smallest number as the alligned sense.
     - Input: 
-      ex. keyword_score['Absorption']
+      ex. keyword_score['Absorption (acoustics)']
           {'definition': 'Acoustic absorption refers to the process by which a material, structure, or object takes in sound energy when sound waves are encountered, as opposed to reflecting the energy.',
           'keywords': {'absorption.n.01': {27: 'process'},
           'absorption.n.02': {27: 'process'},
@@ -130,8 +130,9 @@ def align_synset(keywords_score, keyword2sense, definitions):
           'keywords': {'parlance.n.01': {12: 'expression'},
                        'idiom.n.04': {15: 'phrase', 12: 'expression'}}}
     - Return: alignResult
-        ex. {'WN_synset': 'absorption.n.01',
-             'GT': 'process.n.06',
+        ex. alignResult['Absorption']
+            {'WN_synset': 'absorption.n.01',
+             'origGT': 'process.n.06',
              'WIKI_def': 'Acoustic absorption refers to the process by which a material, structure, or object takes in sound energy when sound waves are encountered, as opposed to reflecting the energy.',
              'WN_def': '(chemistry) a process in which one substance permeates another; a fluid permeates or is dissolved by a liquid or solid'}
     """
@@ -145,7 +146,7 @@ def align_synset(keywords_score, keyword2sense, definitions):
         highestScoreGT = max(keywords_score[title]['keywords'][matched_synset].items(), key=operator.itemgetter(1))[1]
         GT = keyword2sense[title][matched_synset][highestScoreGT]
         alignResult[title] = {'WN_synset': matched_synset,
-                              'GT': GT,
+                              'origGT': GT,
                               'WIKI_def': definitions[title],
                               'WN_def': wn.synset(matched_synset).definition()}
     print("Finished alignment.")
@@ -153,11 +154,59 @@ def align_synset(keywords_score, keyword2sense, definitions):
     return alignResult
 
 
+def GT_refine(alignResult, GTfreqThreshold):
+    """
+    Limit number of GTs by setting threshold for less frequent GTs.
+    Less frequent GTs will be reassigned to higher level hypernyms (which is also GT); or be filtered out.
+    - Input: alignResult
+    - Return:
+        - alignResult
+        ex. alignResult['Absorption']
+            {'WN_synset': 'absorption.n.01',
+             'origGT': 'process.n.06',
+             'refinedGT': '', 
+             'WIKI_def': 'Acoustic absorption refers to the process by which a material, structure, or object takes in sound energy when sound waves are encountered, as opposed to reflecting the energy.',
+             'WN_def': '(chemistry) a process in which one substance permeates another; a fluid permeates or is dissolved by a liquid or solid'}
+    """
+
+    GTs = [title_info['origGT'] for title, title_info in alignResult.items()]
+    GT_count = Counter(GTs)
+    GT_count_clean = dict(GT_count)
+    GT_category    = {}
+    
+    for gt in GT_count:
+        if GT_count[gt] < GTfreqThreshold:
+            synset = wn.synset(gt)
+            # 只取第一個路徑
+            hypers = synset.hypernym_paths()[0]
+            hypers.reverse()
+            for hyper in hypers:
+                if hyper.name() in GT_count and GT_count[hyper.name()] >= GTfreqThreshold:
+                    GT_count_clean[hyper.name()] += GT_count_clean[gt]
+                    GT_category[gt] = hyper.name()
+                    break
+            # 不論有沒有找到可以另外歸的 GT，只要小於 GTfreqThreshold 就刪除
+            del GT_count_clean[gt]
+        else:
+            GT_category[gt] = gt
+    print(f"{len(GT_category)} GTs are refined to {len({gt_cat for gt, gt_cat in GT_category.items()})} categories.")
+    
+    titles = [title for title in alignResult]
+    for title in titles:
+        origGT = alignResult[title]['origGT']
+        if origGT in GT_category:
+            alignResult[title]['refinedGT'] = GT_category[origGT]
+        else:
+            del alignResult[title]
+                    
+    return alignResult
+
+
 def writeFile(alignResult, newFilePATH):
     print("Writing file...")
     writer = []
     for title, title_info in alignResult.items():
-        writer.append(f"{title}\t{title_info['WN_synset']}\t{title_info['GT']}\t-{title_info['WIKI_def']}\t-{title_info['WN_def']}")
+        writer.append(f"{title}\t{title_info['WN_synset']}\t{title_info['refinedGT']}\t{title_info['origGT']}\t-{title_info['WIKI_def']}\t-{title_info['WN_def']}")
         
     with open(newFilePATH, 'w') as f:
         f.write('\n'.join(writer))
@@ -169,7 +218,8 @@ def main():
     keywords, keyword2sense = get_keywords(definitions)
     keywords_score = get_keywords_score(definitions, keywords)
     alignResult = align_synset(keywords_score, keyword2sense, definitions)
-    writeFile(alignResult, newFilePATH="./tmp.txt")
+    new_alignResult = GT_refine(alignResult, GTfreqThreshold=10)
+    writeFile(new_alignResult, newFilePATH="./tmp.txt")
     
 
 if __name__ == "__main__":
