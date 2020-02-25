@@ -1,5 +1,6 @@
 from collections import Counter, defaultdict
 from nltk.corpus import wordnet as wn
+import logging
 import nltk
 import operator
 import re
@@ -13,6 +14,7 @@ def get_definition(definitionFILE_PATH):
           ex. {"Apple": "An apple is a sweet, edible fruit produced by an apple tree (Malus pumila)."}
     """
 
+    print("Reading definition...")
     definitions = defaultdict(str)
     with open(definitionFILE_PATH, 'r') as f:
         for line in f:
@@ -22,6 +24,7 @@ def get_definition(definitionFILE_PATH):
             # 丟掉 Named entities (title出現在句子的中間且是大寫)
             if '(disambiguation)' not in title and headword not in definition[1:]:
                 definitions[title] = definition
+    print(f"Read {len(definitions)} page definitions.")
     return definitions
 
 
@@ -38,6 +41,8 @@ def get_keywords(definitions):
           {'apple.n.01': {'apple': 'apple.n.01', 'edible_fruit': 'edible_fruit.n.01', 'pome': 'pome.n.01', 'false_fruit': 'pome.n.01', 'fruit': 'fruit.n.01', 'produce': 'produce.n.01', 'green_goods': 'produce.n.01', 'green_groceries': 'produce.n.01', 'garden_truck': 'produce.n.01', 'reproductive_structure': 'reproductive_structure.n.01', 'food': 'food.n.02', 'solid_food': 'food.n.02', 'plant_organ': 'plant_organ.n.01', 'solid': 'solid.n.01', 'plant_part': 'plant_part.n.01', 'plant_structure': 'plant_part.n.01', 'object': 'object.n.01', 'physical_object': 'object.n.01'}, 
            'apple.n.02': {'apple': 'apple.n.02', 'orchard_apple_tree': 'apple.n.02', 'Malus_pumila': 'apple.n.02', 'apple_tree': 'apple_tree.n.01', 'fruit_tree': 'fruit_tree.n.01', 'angiospermous_tree': 'angiospermous_tree.n.01', 'flowering_tree': 'angiospermous_tree.n.01', 'tree': 'tree.n.01', 'woody_plant': 'woody_plant.n.01', 'ligneous_plant': 'woody_plant.n.01', 'vascular_plant': 'vascular_plant.n.01', 'tracheophyte': 'vascular_plant.n.01', 'plant': 'plant.n.02', 'flora': 'plant.n.02', 'plant_life': 'plant.n.02', 'object': 'object.n.01', 'physical_object': 'object.n.01'}}
     """
+
+    print("Looking for keywords in Wiki definitions...")
     keywords = defaultdict(list)
     keyword2sense = defaultdict(dict)
     reserved_words = ['act', 'animal', 'artifact', 'attribute', 'body', 'cognition', 
@@ -72,7 +77,8 @@ def get_keywords(definitions):
         if names:
             keywords[title] = names
             keyword2sense[title] = kw_syn
-    
+
+    print(f"{len(keywords)} Wikipages found keywords in their definitions.")
     return keywords, keyword2sense
 
 def get_keywords_score(definitions, keywords):
@@ -84,7 +90,7 @@ def get_keywords_score(definitions, keywords):
         {'definition': 'A party is a gathering of people who have been invited by a host for the purposes of socializing, conversation, recreation, or as part of a festival or other commemoration of a special occasion.',
         'keywords': {'party.n.02': {34: 'gathering'}, 'party.n.04': {2: 'occasion'}}}
     """
-
+    print("Computing keyword scores...")
     keywords_score = {}
     USELESS_GT = {"group"}
 
@@ -129,6 +135,7 @@ def align_synset(keywords_score, keyword2sense, definitions):
              'WIKI_def': 'Acoustic absorption refers to the process by which a material, structure, or object takes in sound energy when sound waves are encountered, as opposed to reflecting the energy.',
              'WN_def': '(chemistry) a process in which one substance permeates another; a fluid permeates or is dissolved by a liquid or solid'}
     """
+    print("Aligning WNsynset to Wikipages... based on keyword scores.")
     alignResult = {}
     for title in keywords_score:
         synset_scores  = {synset: sum(keywords_score[title]['keywords'][synset].keys()) for synset in keywords_score[title]['keywords']}
@@ -141,26 +148,28 @@ def align_synset(keywords_score, keyword2sense, definitions):
                               'GT': GT,
                               'WIKI_def': definitions[title],
                               'WN_def': wn.synset(matched_synset).definition()}
+    print("Finished alignment.")
 
     return alignResult
 
 
-def writeFile(alignResult):
+def writeFile(alignResult, newFilePATH):
+    print("Writing file...")
     writer = []
     for title, title_info in alignResult.items():
         writer.append(f"{title}\t{title_info['WN_synset']}\t{title_info['GT']}\t-{title_info['WIKI_def']}\t-{title_info['WN_def']}")
         
-    with open('tmp.txt', 'w') as f:
+    with open(newFilePATH, 'w') as f:
         f.write('\n'.join(writer))
+    print(f"Done writing File. Location: {newFilePATH}")
 
 
 def main():
     definitions = get_definition('/home/nlplab/cykuo/textnet/wiki.definition.txt')
-    print(len(definitions))
     keywords, keyword2sense = get_keywords(definitions)
     keywords_score = get_keywords_score(definitions, keywords)
     alignResult = align_synset(keywords_score, keyword2sense, definitions)
-    writeFile(alignResult)
+    writeFile(alignResult, newFilePATH="./tmp.txt")
     
 
 if __name__ == "__main__":
