@@ -226,7 +226,7 @@ def main():
     keywords_score = get_keywords_score(definitions, keywords)
     alignResult = align_synset(keywords_score, keyword2sense, definitions)
     new_alignResult = GT_refine(alignResult, GTfreqThreshold=10)
-    writeFile(new_alignResult, newFilePATH="./tmp.txt")
+    writeFile(new_alignResult, newFilePATH="/home/nlplab/patina/WikiSense/data/hypernym_definition_gt.txt")
     
 
 if __name__ == "__main__":
