@@ -1,3 +1,4 @@
+from feature_selection import read_categories, get_parentCategories
 from collections import Counter, defaultdict
 from nltk.corpus import wordnet as wn
 import logging
@@ -143,6 +144,7 @@ def align_synset(keywords_score, keyword2sense, definitions):
              'WIKI_def': 'Acoustic absorption refers to the process by which a material, structure, or object takes in sound energy when sound waves are encountered, as opposed to reflecting the energy.',
              'WN_def': '(chemistry) a process in which one substance permeates another; a fluid permeates or is dissolved by a liquid or solid'}
     """
+
     print("Aligning WNsynset to Wikipages... based on keyword scores.")
     alignResult = {}
     for title in keywords_score:
@@ -209,6 +211,25 @@ def GT_refine(alignResult, GTfreqThreshold):
     return alignResult
 
 
+def excl_disambigPage(alignResult, pageCat, parentCatsID, id2cat, cat2id):
+    """
+    Check categories of all pages. Most pages with [] empty categories are disambiguate pages.
+    """
+    
+    cleanAlignResult = {}
+    disambigPage = set()
+    
+    for title in alignResult:
+        parentsName = get_parentCategories(title, pageCat, parentCatsID, id2cat, cat2id)
+        if parentsName==[]:
+            disambigPage.add(title)
+            
+    cleanAlignResult = {title:title_info for title, title_info in alignResult.items() if title not in disambigPage}
+    print(f"{len(cleanAlignResult)} pairs generated.")
+    
+    return cleanAlignResult
+
+
 def writeFile(alignResult, newFilePATH):
     print("Writing file...")
     writer = []
@@ -225,8 +246,10 @@ def main():
     keywords, keyword2sense = get_keywords(definitions)
     keywords_score = get_keywords_score(definitions, keywords)
     alignResult = align_synset(keywords_score, keyword2sense, definitions)
-    new_alignResult = GT_refine(alignResult, GTfreqThreshold=10)
-    writeFile(new_alignResult, newFilePATH="/home/nlplab/patina/WikiSense/data/hypernym_definition_gt.txt")
+    newAlignResult = GT_refine(alignResult, GTfreqThreshold=10)
+    pageCat, parentCatsID, id2cat, cat2id = read_categories()
+    newAlignResult = excl_disambigPage(newAlignResult, pageCat, parentCatsID, id2cat, cat2id)
+    writeFile(newAlignResult, newFilePATH="/home/nlplab/patina/WikiSense/data/hypernym_definition_gt.txt")
     
 
 if __name__ == "__main__":
