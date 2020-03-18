@@ -9,6 +9,8 @@ from collections import Counter, defaultdict
 from nltk.corpus import wordnet as wn
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.svm import LinearSVC
 
 
 def read_categories():
@@ -91,6 +93,39 @@ def main():
     pageCat, parentCatsID, id2cat, cat2id = read_categories()
     featuresText = gen_features('/home/nlplab/patina/WikiSense/data/hypernym_definition_gt.txt', parentCatsID, id2cat, cat2id)
     
+    mlb = MultiLabelBinarizer()
+
+    # df: Read the whold data
+    df = pd.DataFrame(featuresText)
+
+    # df_numbered: change data into numeric form; process categories & PEs
+    cat_df = pd.DataFrame(mlb.fit_transform(df['categories']),columns=mlb.classes_, index=df.index)  # Category資料獨立成另一 dataframe, 轉成 0/1表示
+    catNames = ['Cat: '+cat for cat in cat_df.columns.tolist()]
+    cat_df.columns = catNames
+    df_numbered = df.drop(columns=['categories'])
+    df_numbered = df_numbered.join(cat_df)
+
+    pe_df = pd.get_dummies(df['PE'])  # 如果 PE 是 None，那整行都是 0
+    peNames = ['PE: '+pe for pe in pe_df.columns.tolist()]
+    pe_df.columns = peNames
+    df_numbered = df_numbered.drop(columns=['PE'])
+    df_numbered = df_numbered.join(pe_df)
+
+    # 把答案切割出來
+    label = df_numbered['GT']
+    df_numbered = df_numbered.drop(columns=['GT'])
+
+    feature_train, feature_test, label_train, label_test = train_test_split(df_numbered, label, test_size=0.1, random_state=42)
+    clf  = LinearSVC(random_state=0, tol=1e-5)
+    feature_train_np = feature_train.iloc[:,1:].to_numpy()
+    feature_test_np  = feature_test.iloc[:,1:].to_numpy()
+
+    clf.fit(feature_train_np, label_train)
+
+    label_pred = clf.predict(feature_test_np)
+    print(np.sum(label_test == label_pred) / len(label_test))
+
+
 
 if __name__ == "__main__":
     main()
