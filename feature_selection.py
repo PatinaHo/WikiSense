@@ -86,16 +86,19 @@ def gen_features(FILE_PATH, pageCat, parentCatsID, id2cat, cat2id):
     return featuresText
 
 
-def main():
-    pageCat, parentCatsID, id2cat, cat2id = read_categories()
-    featuresText = gen_features('/home/nlplab/patina/WikiSense/data/hypernym_definition_gt.txt', pageCat, parentCatsID, id2cat, cat2id)
-    
+def trans_feature(df):
+    """
+    Transform data into numeric form; process categories & PEs.
+    Arg:
+        - df(DataFrame): shape (12354, 5)
+          Index(['title', 'PE', 'categories', 'GT', 'alignSynset'], dtype='object')
+    Return:
+        - df_numbered(DataFrame): shape (12354, 41713)
+          Index(['title', 'alignSynset', 'Cat: ...', ..., 'PE: ...'], dtype='object', length=41713)
+        - label(Series): shape (12354,)
+    """
     mlb = MultiLabelBinarizer()
 
-    # df: Read the whold data
-    df = pd.DataFrame(featuresText)
-
-    # df_numbered: change data into numeric form; process categories & PEs
     print("Feature preprocessing...")
     cat_df = pd.DataFrame(mlb.fit_transform(df['categories']),columns=mlb.classes_, index=df.index)  # Category資料獨立成另一 dataframe, 轉成 0/1表示
     catNames = ['Cat: '+cat for cat in cat_df.columns.tolist()]
@@ -108,11 +111,25 @@ def main():
     pe_df.columns = peNames
     df_numbered = df_numbered.drop(columns=['PE'])
     df_numbered = df_numbered.join(pe_df)
-    print("Finished feature preprocessing.")
 
     # 把答案切割出來
     label = df_numbered['GT']
     df_numbered = df_numbered.drop(columns=['GT'])
+    print("Finished feature preprocessing.")
+
+    return df_numbered, label
+
+
+
+
+
+def main():
+    pageCat, parentCatsID, id2cat, cat2id = read_categories()
+    featuresText = gen_features('/home/nlplab/patina/WikiSense/data/hypernym_definition_gt.txt', pageCat, parentCatsID, id2cat, cat2id)
+
+    # df: Read the whold data
+    df = pd.DataFrame(featuresText)
+    df_numbered, label = trans_feature(df)
 
     feature_train, feature_test, label_train, label_test = train_test_split(df_numbered, label, test_size=0.1, random_state=42)
     clf  = LinearSVC(random_state=0, tol=1e-5)
