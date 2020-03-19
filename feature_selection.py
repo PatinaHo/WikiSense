@@ -86,21 +86,30 @@ def gen_features(FILE_PATH, pageCat, parentCatsID, id2cat, cat2id):
     return featuresText
 
 
-def trans_feature(df):
+def trans_feature(df, feature_selection=False, VAR_THRSHD=0.001):
     """
     Transform data into numeric form; process categories & PEs.
     Arg:
         - df(DataFrame): shape (12354, 5)
           Index(['title', 'PE', 'categories', 'GT', 'alignSynset'], dtype='object')
     Return:
-        - df_numbered(DataFrame): shape (12354, 41713)
-          Index(['title', 'alignSynset', 'Cat: ...', ..., 'PE: ...'], dtype='object', length=41713)
+        - df_numbered(DataFrame): shape (12354, ?)
+          Index(['title', 'alignSynset', 'Cat: ...', ..., 'PE: ...'], dtype='object', length=?)
         - label(Series): shape (12354,)
     """
     mlb = MultiLabelBinarizer()
 
     print("Feature preprocessing...")
     cat_df = pd.DataFrame(mlb.fit_transform(df['categories']),columns=mlb.classes_, index=df.index)  # Category資料獨立成另一 dataframe, 轉成 0/1表示
+
+    # Feature selection: 使用變異數 threshold
+    if feature_selection==True:
+        cat_var    = cat_df.var()             # Category 變異數，存成 Series
+
+        VAR_THRSHD = 0.001
+        cat_filter = cat_var[cat_var>VAR_THRSHD]
+        cat_df     = cat_df[cat_filter.index]
+
     catNames = ['Cat: '+cat for cat in cat_df.columns.tolist()]
     cat_df.columns = catNames
     df_numbered = df.drop(columns=['categories'])
@@ -111,6 +120,9 @@ def trans_feature(df):
     pe_df.columns = peNames
     df_numbered = df_numbered.drop(columns=['PE'])
     df_numbered = df_numbered.join(pe_df)
+
+    # 刪掉完全沒有 feature 的 row
+    df_numbered = df_numbered[~df_numbered.iloc[:,3:].eq(0).all(1)]
 
     # 把答案切割出來
     label = df_numbered['GT']
@@ -129,7 +141,7 @@ def main():
 
     # df: Read the whold data
     df = pd.DataFrame(featuresText)
-    df_numbered, label = trans_feature(df)
+    df_numbered, label = trans_feature(df, feature_selection=True)
 
     feature_train, feature_test, label_train, label_test = train_test_split(df_numbered, label, test_size=0.1, random_state=42)
     clf  = LinearSVC(random_state=0, tol=1e-5)
