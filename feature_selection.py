@@ -1,12 +1,10 @@
 import pandas as pd
 import numpy as np
-import nltk
-import operator
+import time
 import re
 import json
 
 from collections import Counter, defaultdict
-from nltk.corpus import wordnet as wn
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.preprocessing import MultiLabelBinarizer
@@ -26,21 +24,20 @@ def read_categories():
           ex. {Programming languages': '40', 'Professional wrestling': '41', ...}
     """
     
+    print("Start reading categories.")
     with open('/home/nlplab/patina/WikiSense/data/categ.json') as json_file:
         pageCat = json.load(json_file)
-        print("pageCat read.")
     with open('/home/nlplab/patina/WikiSense/data/wiki.idCat.json') as json_file:
         id2cat = json.load(json_file)
-        print("id2cat read.")
     with open('/home/nlplab/patina/WikiSense/data/wiki.catId.json') as json_file:
         cat2id = json.load(json_file)
-        print("cat2id read.")
     
     parentCatsID = {}
     with open('/home/nlplab/patina/WikiSense/data/wiki.cat.parent.adjlist', 'r') as f:
         for line in f:
             line = line.strip().split(' ')
             parentCatsID[line[0]] = line[1:] if len(line) > 1 else []
+    print("Finished reading categories.")
         
     return pageCat, parentCatsID, id2cat, cat2id
 
@@ -65,7 +62,7 @@ def get_parentCategories(title, pageCat, parentCatsID, id2cat, cat2id):
     return parentsName
 
 
-def gen_features(FILE_PATH, parentCatsID, id2cat, cat2id):
+def gen_features(FILE_PATH, pageCat, parentCatsID, id2cat, cat2id):
     """
     Generate features of Wikipages. 'features' represents PE & categories.
     Arg: 
@@ -91,7 +88,7 @@ def gen_features(FILE_PATH, parentCatsID, id2cat, cat2id):
 
 def main():
     pageCat, parentCatsID, id2cat, cat2id = read_categories()
-    featuresText = gen_features('/home/nlplab/patina/WikiSense/data/hypernym_definition_gt.txt', parentCatsID, id2cat, cat2id)
+    featuresText = gen_features('/home/nlplab/patina/WikiSense/data/hypernym_definition_gt.txt', pageCat, parentCatsID, id2cat, cat2id)
     
     mlb = MultiLabelBinarizer()
 
@@ -99,6 +96,7 @@ def main():
     df = pd.DataFrame(featuresText)
 
     # df_numbered: change data into numeric form; process categories & PEs
+    print("Feature preprocessing...")
     cat_df = pd.DataFrame(mlb.fit_transform(df['categories']),columns=mlb.classes_, index=df.index)  # Category資料獨立成另一 dataframe, 轉成 0/1表示
     catNames = ['Cat: '+cat for cat in cat_df.columns.tolist()]
     cat_df.columns = catNames
@@ -110,6 +108,7 @@ def main():
     pe_df.columns = peNames
     df_numbered = df_numbered.drop(columns=['PE'])
     df_numbered = df_numbered.join(pe_df)
+    print("Finished feature preprocessing.")
 
     # 把答案切割出來
     label = df_numbered['GT']
@@ -117,13 +116,21 @@ def main():
 
     feature_train, feature_test, label_train, label_test = train_test_split(df_numbered, label, test_size=0.1, random_state=42)
     clf  = LinearSVC(random_state=0, tol=1e-5)
-    feature_train_np = feature_train.iloc[:,1:].to_numpy()
-    feature_test_np  = feature_test.iloc[:,1:].to_numpy()
+    feature_train_np = feature_train.iloc[:,2:].to_numpy()
+    feature_test_np  = feature_test.iloc[:,2:].to_numpy()
 
+    print("Model training...")
+    tStart = time.time()
     clf.fit(feature_train_np, label_train)
+    tEnd = time.time()
+    print(f"Finished model training; spent {tEnd - tStart} seconds.")
 
+    print("Model predicting...")
+    tStart = time.time()
     label_pred = clf.predict(feature_test_np)
-    print(np.sum(label_test == label_pred) / len(label_test))
+    tEnd = time.time()
+    print(f"Finished predicting; spent {tEnd - tStart} seconds.")
+    print("Accuracy =", np.sum(label_test == label_pred) / len(label_test))
 
 
 
