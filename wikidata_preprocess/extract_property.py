@@ -43,9 +43,6 @@ def check_property(item_data, p_num):
     return None
 
 
-def 
-
-
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(
@@ -81,7 +78,7 @@ if __name__ == '__main__':
             jsonl['type'] = pydash.get(record, 'type')
             jsonl['labels']        = {key:pydash.get(record, 'labels.'+key+'.value') for key in ['en', 'zh-hant', 'zh-hans']}
             jsonl['descriptions']  = {key:pydash.get(record, 'descriptions.'+key+'.value') for key in ['en', 'zh-hant', 'zh-hans']}
-            jsonl['sitelinks']     = {key:pydash.get(record, 'sitelinks.'+'.title') for key in ['enwiki', 'zhwiki']}
+            jsonl['sitelinks']     = {key:pydash.get(record, 'sitelinks.'+key+'.title') for key in ['enwiki', 'zhwiki']}
             jsonl['claims']        = {}
             for ppty in propertyToSave:
                 if check_property(record, ppty) != None:
