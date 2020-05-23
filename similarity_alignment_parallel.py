@@ -2,14 +2,8 @@ from collections import defaultdict
 from nltk.corpus import wordnet as wn, wordnet_ic
 from random import sample
 from tqdm import tqdm
-from multiprocessing import Pool
+import multiprocessing as mp
 import json
-import itertools
-import functools
-import operator
-import re
-import numpy as np
-import pandas as pd
 import time
 import os
 import csv
@@ -49,63 +43,6 @@ def get_rel_wn_syn(syn):
     
     return related_terms
 
-    
-def WikiSisterPg(title):
-    """
-    Purpose: (Step 1b) To find sister pages of wikipedia page
-    Input: Wikipedia page title (string)
-    Output: All wikipedia sister pages of [title] (list)
-    """
-    sisters = []
-    
-    try:
-        categories = page_cat[title]
-        for cat in categories:
-            sisters += cat_page[cat]
-    except KeyError:
-        pass
-    
-    return sisters
-
-
-def ModSisterPg(sister_pgs):
-    """
-    Purpose: To modify Wiki sister pages
-    """
-    sister_pgs = [re.sub('\s\(.*\)', '', item) for item in sister_pgs]
-    sister_pgs = [re.sub('\s', '_', item) for item in sister_pgs]
-    
-    return sister_pgs
-
-
-def RemoveHead(headword, pages):
-    """
-    Purpose: Remove headword from Wikipedia pages
-    Input: [headword]: headword (str); [pages]: Wiki pages (list of string)
-    Output: [filtered_pages]: filtered wikipedia pages (list of string)
-    """
-    
-    pages = [item.lower() for item in pages]
-    headword = headword.lower()
-    pages = set(pages)
-    pages.discard(headword)
-    pages = list(pages)
-    
-    return pages
-
-
-def CheckWiki(wiki_sis_pgs):
-    """
-    Purpose: Check whether wiki sister page is in wordnet (literally)
-    Input: [wiki_sis_pgs]: modified wiki sister pages (a list of string)
-    Output: [wiki_sis_pgs]: wiki sis pages that can be found in WordNet (a list of string)
-    """
-    wiki_in_wn = []
-    for wiki_pg in wiki_sis_pgs:
-        if wn.synsets(wiki_pg):
-            wiki_in_wn.append(wiki_pg)    
-            
-    return wiki_in_wn
 
 
 def limit_wiki_sis_pg(sis_pages):
@@ -170,6 +107,36 @@ def wiki_wn_group_single_link(wiki_pgs, wn_terms):
     return max_wiki_syn, max_wn_syn, max_sim
     
 
+def sim_match(w):
+    # wordResult = defaultdict(lambda: defaultdict(list))
+    wordResult = {}
+    print(w)
+    for synset in wn.synsets(w, pos=wn.NOUN):
+        wordResult[synset.name()] = {}
+        wn_rel_syn = wn_relatedSyn[synset] # Get related synsets of [synset]
+        for cand in wiki_cand[w]:
+            # Get Wikipedia sister pages (sister pages of [cand])
+            sister_pgs = [sis for sis in wiki_relatedPage[cand] if wn.synsets(sis, pos=wn.NOUN)]
+            lim_sister_pgs = limit_wiki_sis_pg(sister_pgs)
+
+            senses =  [ wn.synsets(lim_sister_pgs[i], pos='n') for i in range(len(lim_sister_pgs)) ]
+            wiki_sister_pgs = ngroup.disambGroup(lim_sister_pgs, senses, pos='n')
+
+            # 如果[wiki_sister_pgs]是空的，然後len(sister_pgs) != 0，就繼續找新的Wiki page
+            while len(wiki_sister_pgs) == 0 and len(sister_pgs) != 0:
+                sister_pgs, lim_sister_pgs = get_new_lim_wiki_sis(sister_pgs, wiki_sister_pgs)   
+                senses =  [ wn.synsets(lim_sister_pgs[i], pos='n') for i in range(len(lim_sister_pgs)) ]
+                wiki_sister_pgs = ngroup.disambGroup(lim_sister_pgs, senses, pos='n')
+
+            wiki_sister_pgs_name = [item[0] for item in wiki_sister_pgs]  ######################TO BE DEL        
+            wiki_sister_pgs = [item[1] for item in wiki_sister_pgs]       # synsets
+
+            max_wiki_syn, max_wn_syn, max_sim = wiki_wn_group_single_link(wiki_sister_pgs, wn_rel_syn)
+            
+            wordResult[synset.name()][cand] = [max_sim]
+    
+    return wordResult
+
 ##################   Reading required data   ##################
 
 # wiki_cand: {'bass': {'Bass guitar': 15039, 'Double bass': 6540, 'Bass (voice type)': 2791, ...}}
@@ -200,35 +167,12 @@ if __name__ == "__main__":
     wikiCandKeys = set(wiki_cand.keys())
     targetAnchors = [lemma for lemma in polysemousLemma if lemma in wikiCandKeys]
 
-    result = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    with mp.Pool(mp.cpu_count()-2) as p:
+        wordResultList = list(tqdm(p.imap(sim_match, targetAnchors), total=len(targetAnchors)))
 
-    with tqdm(total=6121) as pbar:
-        for w in targetAnchors[:2000]:
-            for synset in wn.synsets(w, pos = wn.NOUN):
-                pbar.update(1)
-                wn_rel_syn = wn_relatedSyn[synset] # Get related synsets of [synset]
-                for cand in wiki_cand[w]:
-                    # Get Wikipedia sister pages (sister pages of [cand])
-                    sister_pgs = [sis for sis in wiki_relatedPage[cand] if wn.synsets(sis, pos=wn.NOUN)]
-                    lim_sister_pgs = limit_wiki_sis_pg(sister_pgs)
+    result = {}
+    for num, w in enumerate(targetAnchors):
+        result[w] = wordResultList[num]
 
-                    senses =  [ wn.synsets(lim_sister_pgs[i], pos='n') for i in range(len(lim_sister_pgs)) ]
-                    wiki_sister_pgs = ngroup.disambGroup(lim_sister_pgs, senses, pos='n')
-
-                    # 如果[wiki_sister_pgs]是空的，然後len(sister_pgs) != 0，就繼續找新的Wiki page
-                    while len(wiki_sister_pgs) == 0 and len(sister_pgs) != 0:
-                        sister_pgs, lim_sister_pgs = get_new_lim_wiki_sis(sister_pgs, wiki_sister_pgs)   
-                        senses =  [ wn.synsets(lim_sister_pgs[i], pos='n') for i in range(len(lim_sister_pgs)) ]
-                        wiki_sister_pgs = ngroup.disambGroup(lim_sister_pgs, senses, pos='n')
-
-                    wiki_sister_pgs_name = [item[0] for item in wiki_sister_pgs]  ######################TO BE DEL        
-                    wiki_sister_pgs = [item[1] for item in wiki_sister_pgs]       # synsets
-
-                    max_wiki_syn, max_wn_syn, max_sim = wiki_wn_group_single_link(wiki_sister_pgs, wn_rel_syn)
-                    
-    #                 result[w][synset.name()][cand].append(max_wn_syn)
-    #                 result[w][synset.name()][cand].append(max_wiki_syn)
-                    result[w][synset.name()][cand].append(max_sim)
-    
-    with open('result0.json', 'w') as fp:
+    with open('sim_result.json', 'w') as fp:
         json.dump(result, fp)
