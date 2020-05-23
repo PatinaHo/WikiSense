@@ -134,5 +134,6 @@ dmypy.json
 # Cloned from other's work
 fast_align_test/
 
+archive/
 jupyter_nb/
 data/
