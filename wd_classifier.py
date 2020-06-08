@@ -4,6 +4,10 @@ import json
 import random
 from tqdm import tqdm
 
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import roc_auc_score
+
 from torchtext.data import Field
 from torchtext.data import TabularDataset
 from torchtext.data import Iterator, BucketIterator
@@ -46,19 +50,22 @@ class InnerproductBaseline(nn.Module):
     def __init__(self, hidden_dim, emb_dim=300, num_linear=1):
         super().__init__()
         self.sigmoid = nn.Sigmoid()
+        self.cosLinear = nn.Linear(1, 1)
+        nn.init.xavier_uniform_(self.cosLinear.weight, gain=1.0)
         self.wn_embedding = nn.Embedding(len(WN_TEXT.vocab), emb_dim, padding_idx=1)
         self.wd_embedding = nn.Embedding(len(WD_TEXT.vocab), emb_dim, padding_idx=1)
 
     def forward(self, wn_path, wd_path):
-        wn_emb  = self.wn_embedding(wn_path) # (16,64,300)
-        wd_emb  = self.wd_embedding(wd_path) # (175,64,300)
+        wn_emb  = self.wn_embedding(wn_path) # (16, 64, 300)
+        wd_emb  = self.wd_embedding(wd_path) # (175, 64, 300)
         wn_layer1 = torch.sum(wn_emb, dim=0) # (64, 300)
         wd_layer1 = torch.sum(wd_emb, dim=0) # (64, 300)
         
-        product = torch.bmm(wn_layer1[:, None,:], wd_layer1[:,:, None])  # (64, )
-        sigmoid_product = self.sigmoid(product)
+        cosSim = torch.nn.functional.cosine_similarity(wn_layer1, wd_layer1)
+        result = self.cosLinear(cosSim.unsqueeze(1))
+        result = self.sigmoid(result)
         
-        return sigmoid_product
+        return result
 
 
 if __name__ == "__main__":
@@ -130,6 +137,7 @@ if __name__ == "__main__":
     loss_func = nn.BCELoss()
 
     epochs = 50
+    minValLoss = 999
 
     for epoch in range(1, epochs + 1):
         running_loss = 0.0
@@ -150,10 +158,31 @@ if __name__ == "__main__":
         # calculate the validation loss for this epoch
         val_loss = 0.0
         model.eval() # turn on evaluation mode
+
+        # #############################################
+        # ##  Use sklearn for concat vector  ##
+        # #############################################
+        
+        # concat_x = torch.concat(x1, x2)
+        # clf = make_pipeline(StandardScaler(), SVC(gamma='auto'))
+        # clf.fit(concat_x, y)
+
+
+
         for x1, x2, y in valid_dl:
             preds = model(x1.to(device), x2.to(device))
             loss = loss_func(preds, y.to(device))
             val_loss += loss.data * x1.size(1)
 
         val_loss /= len(vld)
-        print('Epoch: {}, Training Loss: {:.4f}, Validation Loss: {:.4f}'.format(epoch, epoch_loss, val_loss))
+        print('Epoch: {}, Training Loss: {:.4f}, Validation Loss: {:.4f}'.format(epoch, epoch_loss, val_loss), end=' ')
+
+        if val_loss < minValLoss:
+            print('model saved.')
+            minValLoss = val_loss
+            glob_preds = preds
+            torch.save(model.state_dict(), './model')
+        else:
+            print()
+        print()
+
