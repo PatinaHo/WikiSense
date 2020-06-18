@@ -89,9 +89,9 @@ def wiki_wn_group_single_link(wiki_pgs, wn_terms):
     try:
         max_wiki_syn = max_wiki_syn.name()
         max_wn_syn = max_wn_syn.name()
-        max_sim = str(sigmoid(max_sim))
+        max_sim = str(max_sim)
     except AttributeError:
-        max_sim = str(sigmoid(max_sim))
+        max_sim = str(max_sim)
         pass
                 
     return max_wiki_syn, max_wn_syn, max_sim
@@ -101,14 +101,15 @@ def sim_match(w):
     # wordResult = defaultdict(lambda: defaultdict(list))
     wordResult = {}
     print(w)
+    candWikipages = list(cand for cand in wiki_cand[w] if wiki_cand[w][cand]>=3)
     for synset in wn.synsets(w, pos=wn.NOUN):
         wordResult[synset.name()] = {}
         wn_rel_syn = wn_relatedSyn[synset] # Get related synsets of [synset]
-        for cand in wiki_cand[w]:
+        for cand in candWikipages:
             # Get Wikipedia sister pages (sister pages of [cand])
             relatedPages = wiki_relatedPage[cand]
             wikiSyns = trans_wikipages(relatedPages)
-            wikiSyns = [item[1] for item in wiki_sister_pgs]       # synsets
+            wikiSyns = [item[1] for item in wikiSyns]       # synsets
 
             max_wiki_syn, max_wn_syn, max_sim = wiki_wn_group_single_link(wiki_sister_pgs, wn_rel_syn)
             
@@ -144,14 +145,16 @@ if __name__ == "__main__":
     allLemma = list(wn.all_lemma_names(pos=wn.NOUN))
     polysemousLemma = [lemma for lemma in allLemma if len(wn.synsets(lemma, pos=wn.NOUN))>1]
     wikiCandKeys = set(wiki_cand.keys())
-    targetAnchors = [lemma for lemma in polysemousLemma if lemma in wikiCandKeys]
+    # targetAnchors = [lemma for lemma in polysemousLemma if lemma in wikiCandKeys]
+
+    EVAL_WORDS = ['star', 'mole', 'galley', 'cone', 'bass', 'bow', 'taste', 'interest', 'issue', 'duty', 'sentence', 'slug', 'argument', 'arm', 'atmosphere', 'bank', 'bar']
 
     with mp.Pool(mp.cpu_count()-2) as p:
-        wordResultList = list(tqdm(p.imap(sim_match, targetAnchors), total=len(targetAnchors)))
+        wordResultList = list(tqdm(p.imap(sim_match, EVAL_WORDS), total=len(EVAL_WORDS)))
 
     result = {}
-    for num, w in enumerate(targetAnchors):
+    for num, w in enumerate(EVAL_WORDS):
         result[w] = wordResultList[num]
 
-    with open('sigmoidSim_result.json', 'w') as fp:
+    with open('simResult_.json', 'w') as fp:
         json.dump(result, fp)
