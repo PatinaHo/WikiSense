@@ -3,6 +3,7 @@ from nltk.corpus import wordnet as wn, wordnet_ic
 from random import sample
 from tqdm import tqdm
 import multiprocessing as mp
+import numpy as np
 import json
 import time
 import os
@@ -45,37 +46,22 @@ def get_rel_wn_syn(syn):
 
 
 
-def limit_wiki_sis_pg(sis_pages):
-    """
-    Purpose: Limit the amount of wiki sister pages (for better performance of [disambWikiGroup])
-    Input: [sis_pages]: Wiki sister pages (list of string)
-    Output: [final_sis_pages]: reduced (if applicable) Wiki sister pages (list of string)
-    """
+def trans_wikipages(wikipages, UPBOUND_disambGroup=50):
     
-    if len(sis_pages) < 50:
-        lim_sis_pages = sis_pages
-    else:
-        lim_sis_pages = sample(sis_pages, 50)
-    
-    return lim_sis_pages
+    wikipageGroup = wikipages if len(wikipages) < UPBOUND_disambGroup else sample(wikipages, UPBOUND_disambGroup)
+    tmpSenses_ = [ wn.synsets(wikipageGroup[i], pos=wn.NOUN) for i in range(len(wikipageGroup)) ]
+    wikiSyns = ngroup.disambGroup(wikipageGroup, tmpSenses_, pos=wn.NOUN)
 
+    # 如果 disambiguate 失敗 (wikiSyns為空)，而還有尚未 disambigate 的 wikipages 可用 (len(wikipages)!=0)，就繼續 sample 下一組 wikipage
+    while len(wikiSyns) == 0 and len(wikipages) != 0:
+        # 把 disambiguate 失敗的 wikipage 從 wikipages 刪掉，再sample 其他 wikipage 出來
+        wikipages = list(set(wikipages) - set(wikipageGroup))
+        wikipageGroup = wikipages if len(wikipages) < UPBOUND_disambGroup else sample(wikipages, UPBOUND_disambGroup)
+        tmpSenses_ =  [ wn.synsets(wikipageGroup[i], pos=wn.NOUN) for i in range(len(wikipageGroup)) ]
+        wikiSyns = ngroup.disambGroup(wikipageGroup, tmpSenses_, pos=wn.NOUN)
+    
+    return wikiSyns
 
-def get_new_lim_wiki_sis(all_wiki_sis, remove_sis):
-    """
-    Purpose: 把找不到wiki_synset的wiki_page從[all_wiki_sis]刪掉，再抽50個wiki_page出來
-    Input: [all_wiki_sis]: all wiki pages (a list of string); 
-           [remove_sis]: 找不到synset的wiki_page (a list of string)
-    Output: [all_wiki_sis]: 刪掉找不到synset的wiki page之後的所有wiki sister page
-            [lim_wiki_sis]: 重新抽的50個wiki page
-    """
-    
-    all_wiki_sis = list(set(all_wiki_sis) - set(remove_sis))
-    if len(all_wiki_sis) < 50:
-        lim_wiki_sis = all_wiki_sis
-    else:
-        lim_wiki_sis = sample(all_wiki_sis, 50)
-    
-    return all_wiki_sis, lim_wiki_sis
 
 
 def wiki_wn_group_single_link(wiki_pgs, wn_terms):
@@ -88,6 +74,9 @@ def wiki_wn_group_single_link(wiki_pgs, wn_terms):
     max_wiki_syn = 'None'
     max_wn_syn = 'None'
     
+    def sigmoid(x):
+        return 1/(1 + np.exp(-x))
+    
     for wn_term in wn_terms:
         for wiki_pg in wiki_pgs:
             pair_sim = wn_term.res_similarity(wiki_pg, brown_ic)
@@ -99,9 +88,9 @@ def wiki_wn_group_single_link(wiki_pgs, wn_terms):
     try:
         max_wiki_syn = max_wiki_syn.name()
         max_wn_syn = max_wn_syn.name()
-        max_sim = str(max_sim)
+        max_sim = str(sigmoid(max_sim))
     except AttributeError:
-        max_sim = str(max_sim)
+        max_sim = str(sigmoid(max_sim))
         pass
                 
     return max_wiki_syn, max_wn_syn, max_sim
@@ -116,20 +105,9 @@ def sim_match(w):
         wn_rel_syn = wn_relatedSyn[synset] # Get related synsets of [synset]
         for cand in wiki_cand[w]:
             # Get Wikipedia sister pages (sister pages of [cand])
-            sister_pgs = [sis for sis in wiki_relatedPage[cand] if wn.synsets(sis, pos=wn.NOUN)]
-            lim_sister_pgs = limit_wiki_sis_pg(sister_pgs)
-
-            senses =  [ wn.synsets(lim_sister_pgs[i], pos='n') for i in range(len(lim_sister_pgs)) ]
-            wiki_sister_pgs = ngroup.disambGroup(lim_sister_pgs, senses, pos='n')
-
-            # 如果[wiki_sister_pgs]是空的，然後len(sister_pgs) != 0，就繼續找新的Wiki page
-            while len(wiki_sister_pgs) == 0 and len(sister_pgs) != 0:
-                sister_pgs, lim_sister_pgs = get_new_lim_wiki_sis(sister_pgs, wiki_sister_pgs)   
-                senses =  [ wn.synsets(lim_sister_pgs[i], pos='n') for i in range(len(lim_sister_pgs)) ]
-                wiki_sister_pgs = ngroup.disambGroup(lim_sister_pgs, senses, pos='n')
-
-            wiki_sister_pgs_name = [item[0] for item in wiki_sister_pgs]  ######################TO BE DEL        
-            wiki_sister_pgs = [item[1] for item in wiki_sister_pgs]       # synsets
+            relatedPages = wiki_relatedPage[cand]
+            wikiSyns = trans_wikipages(relatedPages)
+            wikiSyns = [item[1] for item in wiki_sister_pgs]       # synsets
 
             max_wiki_syn, max_wn_syn, max_sim = wiki_wn_group_single_link(wiki_sister_pgs, wn_rel_syn)
             
@@ -162,7 +140,7 @@ with open(os.path.join(SERVER_ROOT, "nicalin/wiki-wn_alignment/data/wiki_sis_pg_
 
 
 if __name__ == "__main__":
-    allLemma = list(wn.all_lemma_names(pos='n'))
+    allLemma = list(wn.all_lemma_names(pos=wn.NOUN))
     polysemousLemma = [lemma for lemma in allLemma if len(wn.synsets(lemma, pos=wn.NOUN))>1]
     wikiCandKeys = set(wiki_cand.keys())
     targetAnchors = [lemma for lemma in polysemousLemma if lemma in wikiCandKeys]
@@ -174,5 +152,5 @@ if __name__ == "__main__":
     for num, w in enumerate(targetAnchors):
         result[w] = wordResultList[num]
 
-    with open('sim_result.json', 'w') as fp:
+    with open('sigmoidSim_result.json', 'w') as fp:
         json.dump(result, fp)
