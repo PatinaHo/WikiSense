@@ -14,33 +14,34 @@ SERVER_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__
 DIRECTORY_ROOT = os.getcwd()
 brown_ic = wordnet_ic.ic('ic-brown.dat')
 
-def get_rel_wn_syn(syn):
+def get_rel_wn_syn(syn, hyperDepth=1, hypoDepth=1, sisterDepth=1):
     """
-    Purpose: (Step 1a) Get all related synsets
-    Input:   WordNet synset (string)
-    Output:  a list of related synsets (including sisterms(往上抓一層的hypernym再往下抓一層hyponym), part holonyms +
-             member holonyms + member holonyms) (Data type: list)
-    
-    [NOTE]:member holonym 的 closure的深度要限制嗎？？（目前是有限制一層）
+    Purpose: Get all related synsets
+    Input: WordNet synset (string)
+    Output: a list of related synsets (including sisterms(往上抓一層的hypernym再往下抓一層hyponym), part holonyms +
+            member holonyms + member holonyms) (Data type: list)
     """
     #syn = wn.synset(syn)
     hypo = lambda s: s.hyponyms()
     hyper = lambda s: s.hypernyms()
     
     # hypernyms
-    hypernyms = list(syn.closure(hyper, depth = 1))# get hypernyms (with the depth of 1 level)
+    hypernyms = list(syn.closure(hyper, depth=hyperDepth))# get hypernyms (with the depth of 1 level)
+    
+    # hyponyms
+    hyponyms = list(syn.closure(hypo, depth=hypoDepth))# get hypernyms (with the depth of 1 level)
     
     # sister synsets (hyponyms of hypernyms)
-    hypo_syn = []
+    sisters = []
     for h in hypernyms:
-        for s in list(h.closure(hypo, depth = 1)):
-            hypo_syn.append(s)
+        for s in list(h.closure(hypo, depth=sisterDepth)):
+            sisters.append(s)
     
     part_holonyms = [ z.synset() for y in list(syn.closure(lambda syn: syn.part_holonyms())) for z in y.lemmas() ]
-    member_holonyms = [ z.synset() for y in list(syn.closure(lambda syn: syn.member_holonyms(), depth = 1)) for z in y.lemmas() ]
-    part_meronyms = [ z.synset() for y in list(syn.closure(lambda syn: syn.part_meronyms(), depth = 1)) for z in y.lemmas() ]
+    member_holonyms = [ z.synset() for y in list(syn.closure(lambda syn: syn.member_holonyms(), depth=1)) for z in y.lemmas() ]
+    part_meronyms = [ z.synset() for y in list(syn.closure(lambda syn: syn.part_meronyms(), depth=1)) for z in y.lemmas() ]
     
-    related_terms = hypernyms + hypo_syn + part_holonyms + member_holonyms + part_meronyms
+    related_terms = hypernyms + hyponyms + sisters + part_holonyms + member_holonyms + part_meronyms
     
     return related_terms
 
