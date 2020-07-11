@@ -32,10 +32,12 @@ class Wikidata:
                     graph.add_node(from_page)
 
                 for p_num in record['claims']:
-                    for to_page in pydash.get(record, 'claims.'+p_num):
-                        if to_page not in graph:
-                            graph.add_node(to_page)
-                        graph.add_edge(from_page, to_page, property=p_num)
+                    if p_num=='P31':  ## 慎重考慮刪除！！！
+                        for to_page in pydash.get(record, 'claims.'+p_num):
+                            if to_page not in graph:
+                                graph.add_node(to_page)
+                            # graph.add_edge(from_page, to_page, property=p_num)
+                            graph.add_edge(to_page, from_page)  ## reverse to_page & from_page so it becomes a subclass relation
                 pbar.update(1)
 
 
